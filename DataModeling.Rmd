@@ -1,0 +1,491 @@
+---
+title: "DataModeling"
+author: "Mark Torres"
+date: "5/14/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+1. Import Data:
+
+```{r}
+train <- read.csv("train_values.csv")
+y <- read.csv("train_labels.csv", as.is = TRUE)
+
+# combining data matrix with response vector
+data <- cbind(train, y[, 2]) # combine training matrix with vector of y values
+names(data)[ncol(data)] <- "y"
+data$y <- as.factor(data$y)
+data$y <- as.ordered(data$y) # Make sure factors are encoded as ordered
+
+# the geo_level columns should really be levels, not ints?
+dataNoGeo <- data[, -c(2:4)] # take out geo_levels
+
+# Remove IDs
+dataNoGeo <- dataNoGeo[, -1] # take out IDs
+
+# Import test data
+test <- read.csv("test_values.csv", as.is = TRUE)
+testNoGeo <- test[, -c(2:4)] # take out geo_levels
+testNoGeo <- testNoGeo[, -1] # take out IDs
+```
+
+2. Sampling Data
+Ok, so there are 260,000 observations and 40 columns, so I'd rather not use the whole dataset, since it might take a while to converge. I'll sample 20% of the data and fit the model on that, then test on 80% of the data
+
+```{r}
+# sample train
+indices <- sample.int(nrow(dataNoGeo), floor(0.2 * nrow(dataNoGeo)))
+
+# Training data
+sampleTrain <- dataNoGeo[indices, ]
+
+# Test data
+sampleTest <- dataNoGeo[-indices, ]
+```
+
+
+#---------------------------------------
+
+3. Algorithms
+
+Create evaluation function: micro-averaged F1 score:
+```{r}
+# Source: equation is from DrivenData website
+# Need to make sure that first argument in table is the predictions, second argument is actual values
+
+microF1Score <- function(x) {
+  
+  # check that columns are actual values, rows are predicted values
+  
+  # initialize variables
+  falsePositive <- x[upper.tri(x)] # where first # = [1, 2], second # = [1, 3], third # = [2, 3]
+  falsePositive <- c(sum(falsePositive[1:2]), falsePositive[3], 0) # since we're doing row sums
+  
+  falseNegative <- x[lower.tri(x)] # where first # = [2, 1], second # = [3, 1], third # = [3, 2]
+  falseNegative <- c(0, falseNegative[1], sum(falseNegative[2:3])) # since we're doing row sums
+  
+  truePositive <- diag(x) # correct guesses
+  
+  # calculate metrics, taking advantage of vectorized operations
+  precision <- sum(truePositive) / sum(truePositive + falseNegative)
+  recall <- sum(truePositive) / sum(truePositive + falseNegative)
+
+  # calculate score
+  f1 <- (2 * precision * recall) / (precision + recall)
+  
+  # return score
+  return(signif(f1, 5))
+
+}
+
+```
+
+• Multinomial Logistic Regression
+
+```{r}
+library(foreign)
+library(nnet)
+
+# Fit model
+mod1 <- multinom(y ~ ., data = sampleTrain)
+
+# Make predictions
+predsMultinom <- predict(mod1, sampleTest[, -36], type = "class") # Predict y values
+
+# Evaluate using confusion matrix
+cmMultinom <- table(Predictions = predsMultinom, Actual = sampleTest$y)
+
+# Evaluate accuracy
+sum(diag(cmMultinom)) / sum(colSums(cmMultinom)) # 58.75% accuracy
+
+# Evaluate using micro-averaged F1 score
+scoreMultinom <- microF1Score(cmMultinom)
+scoreMultinom
+```
+
+• Discriminant Analysis
+Note: here, only numeric variables can be used, so this is understandably a weakness
+
+```{r}
+library(klaR)
+
+# get numeric indices
+numerics <- c("count_floors_pre_eq", "age", "area_percentage", "height_percentage", "count_families")
+numIndices <- which(names(sampleTest) %in% numerics)
+
+# Fit LDA
+yLDA <- lda(sampleTrain[, numIndices], grouping = sampleTrain$y)
+
+
+# Predictions and classification
+predsLDA <- unlist(predict(yLDA, sampleTest[, numIndices])[1])
+cmLDA <- table(Predictions = predsLDA, Actual = sampleTest$y)
+
+# Evaluate using micro-averaged F1 score
+scoreLDA <- microF1Score(cmLDA)
+scoreLDA
+```
+
+• Naive Bayes
+
+```{r}
+library(e1071)
+
+# fit model
+modNaiveBayes <- naiveBayes(y ~., data = sampleTrain)
+
+# make predictions
+predsNb <- predict(modNaiveBayes, sampleTest[, -36], type = "class")
+cmNB <- table(Predictions = predsNb, Actual = sampleTest$y)
+
+# Evaluate using micro-averaged F1 score
+scoreNB <- microF1Score(cmNB)
+scoreNB
+```
+
+• Random Forest
+
+```{r}
+# Source: https://www.linkedin.com/pulse/different-random-forest-packages-r-madhur-modi/
+# Because I'm still exploring and I want fast forests that I'll tune later, I'll use the ranger package
+library(ranger)
+
+# fit model. I use importance = "impurity" to calculate Gini index, verbose = true to get runtime, oob.error = false to not calculate oob performance error
+rf <- ranger(y ~., data = sampleTrain,
+             importance = "impurity",
+             classification = TRUE, 
+             verbose = TRUE, 
+             oob.error = TRUE)
+
+
+# make predictions
+predsRf <- predict(rf, sampleTest[, -36])
+predsRf <- predsRf$predictions
+cmRf <- table(Predictions = predsRf, Actual = sampleTest$y)
+
+# Evaluate using micro-averaged F1 score
+scoreRf <- microF1Score(cmRf)
+scoreRf
+```
+
+• Multi-class Adaboost/Boosting: could use some tuning as well
+
+```{r}
+# adabag = AdaBoost
+# maboost = multiclass boosting 
+
+library(adabag)
+library(maboost)
+
+### fit model
+# adaboost
+modAdaboost <- boosting(y ~., data = sampleTrain)
+
+# multiclass boosting
+#modMaboost <- maboost(y ~., data = sampleTrain)
+
+
+### make predictions
+predsAdaboost <- predict(modBoosting, sampleTest[, -36])
+predsAdaboost <- predsAdaboost$predictions
+cmAdaboost <- table(Predictions = predsAdaboost, Actual = sampleTest$y)
+
+predsMaboost <- predict(modMaboost, newdata = sampleTrain[, -36])
+predsMaboost <- predsMaboost$predictions
+cmMaboost <- table(Predictions = predsMaboost, Actual = sampleTest$y)
+
+### Evaluate using micro-averaged F1 score
+scoreAdaboost <- microF1Score(cmAdaboost)
+scoreAdaboost
+
+scoreMaboost <- microF1Score(cmMaboost)
+scoreMaboost
+```
+
+• Multi-class Xgboost: could use some tuning as well
+
+Regular: 
+```{r}
+# source: https://rpubs.com/mharris/multiclass_xgboost
+library(xgboost)
+
+# fit model, with rounds = 500, depth = 10, eta = 0.16 (using pset 4 from S&DS 365)
+xg <- xgboost(data = data.matrix(sampleTrain[, -36]), 
+              label = as.numeric(as.character(sampleTrain$y)) - 1,# only works with numeric
+              nrounds = 500, 
+              params = list(eta = 0.16, 
+                            max.depth = 10, 
+                            objective = "multi:softmax", # need to specify classification
+                            num_class = 3))
+
+# get predictions
+predsXg <- predict(xg, data.matrix(sampleTest[, -36]))
+predsXg <- predsXg + 1 # to convert [0, 2] to [1, 3], just like actual y values
+
+cmXg <- table(Predictions = predsXg, Actual = sampleTest$y)
+
+# Evaluate using micro-averaged F1 score
+scoreXg <- microF1Score(cmXg)
+scoreXg
+```
+
+20 May 2019: Tuning: I'll do a grid search
+
+```{r}
+rounds <- seq(from = 300, to = 700, by = 100)
+depth <- seq(from = 2, to = 12, by = 2)
+etaList <- seq(from = 0.10, to = 0.30, by = 0.04)
+
+# scoresXg <- array(rep(0, length(rounds) * length(depth) * length(eta)), 
+#                    dim = c(length(rounds), length(depth), length(eta)))
+
+# length = rounds, width = depth, height = eta
+
+# for(i in 1:length(rounds)) {
+#   for(j in 1:length(depth)) {
+#     for(k in 1:length(eta)) {
+#       # fit model
+#       xg <- xgboost(data = data.matrix(sampleTrain[, -36]), 
+#               label = as.numeric(as.character(sampleTrain$y)) - 1,# only works with numeric
+#               nrounds = rounds[i], 
+#               params = list(eta = eta[k], 
+#                             max.depth = depth[j], 
+#                             objective = "multi:softmax", # need to specify classification
+#                             num_class = 3))
+#       # score
+#       predsXg <- predict(xg, data.matrix(sampleTest[, -36]))
+#       predsXg <- predsXg + 1 # to convert [0, 2] to [1, 3], just like actual y values
+#       cmXg <- table(Predictions = predsXg, Actual = sampleTest$y)
+#       scoreXg <- microF1Score(cmXg)
+#       scoresXg[i, j, k] <- scoreXg
+#     }
+#   }
+# }
+
+roundsScores <- rep(0, length(rounds))
+depthScores <- rep(0, length(depth))
+etaScores <- rep(0, length(etaList))
+
+# find ideal rounds
+for(i in 1:length(rounds)) {
+  # fit model, with rounds = 500, depth = 10, eta = 0.16 (using pset 4 from S&DS 365)
+  xg <- xgboost(data = data.matrix(sampleTrain[, -36]), 
+              label = as.numeric(as.character(sampleTrain$y)) - 1,# only works with numeric
+              nrounds = rounds[i], 
+              params = list(eta = 0.16, 
+                            max.depth = 10, 
+                            objective = "multi:softmax", # need to specify classification
+                            num_class = 3))
+
+  # get predictions
+  predsXg <- predict(xg, data.matrix(sampleTest[, -36]))
+  predsXg <- predsXg + 1 # to convert [0, 2] to [1, 3], just like actual y values
+  
+  cmXg <- table(Predictions = predsXg, Actual = sampleTest$y)
+  
+  # Evaluate using micro-averaged F1 score
+  scoreXg <- microF1Score(cmXg)
+  roundsScores[i] <- scoreXg
+}
+
+# find ideal depth
+for(i in 1:length(depth)) {
+  # fit model, with rounds = 500, depth = 10, eta = 0.16 (using pset 4 from S&DS 365)
+  xg <- xgboost(data = data.matrix(sampleTrain[, -36]), 
+              label = as.numeric(as.character(sampleTrain$y)) - 1,# only works with numeric
+              nrounds = rounds[which.max(roundsScores)], 
+              params = list(eta = 0.16, 
+                            max.depth = depth[i], 
+                            objective = "multi:softmax", # need to specify classification
+                            num_class = 3))
+
+  # get predictions
+  predsXg <- predict(xg, data.matrix(sampleTest[, -36]))
+  predsXg <- predsXg + 1 # to convert [0, 2] to [1, 3], just like actual y values
+  
+  cmXg <- table(Predictions = predsXg, Actual = sampleTest$y)
+  
+  # Evaluate using micro-averaged F1 score
+  scoreXg <- microF1Score(cmXg)
+  depthScores[i] <- scoreXg
+}
+
+# find ideal eta
+for(i in 1:length(etaList)) {
+  # fit model, with rounds = 500, depth = 10, eta = 0.16 (using pset 4 from S&DS 365)
+  xg <- xgboost(data = data.matrix(sampleTrain[, -36]), 
+              label = as.numeric(as.character(sampleTrain$y)) - 1,# only works with numeric
+              nrounds = rounds[which.max(roundsScores)], 
+              params = list(eta = etaList[i], 
+                            max.depth = depth[which.max(depthScores)], 
+                            objective = "multi:softmax", # need to specify classification
+                            num_class = 3))
+
+  # get predictions
+  predsXg <- predict(xg, data.matrix(sampleTest[, -36]))
+  predsXg <- predsXg + 1 # to convert [0, 2] to [1, 3], just like actual y values
+  
+  cmXg <- table(Predictions = predsXg, Actual = sampleTest$y)
+  
+  # Evaluate using micro-averaged F1 score
+  scoreXg <- microF1Score(cmXg)
+  etaScores[i] <- scoreXg
+}
+
+# Now I'll fit an xg model based off my parameters
+```
+
+Xgboost (pt. 3): Now, I'll include my regions (first and second, not third)
+
+```{r}
+# write data
+dataNoID <- data[, -1]
+dataWithRegions <- dataNoID[, -3] # Doesn't include third geo_level 
+
+# write factors
+dataWithRegions$geo_level_1_id <- factor(dataWithRegions$geo_level_1_id)
+dataWithRegions$geo_level_2_id <- factor(dataWithRegions$geo_level_2_id)
+
+# training/test samples
+indices2 <- sample.int(nrow(dataWithRegions), floor(0.2 * nrow(dataWithRegions)))
+sampleTrain2 <- dataWithRegions[indices2, ]
+sampleTest2 <- dataWithRegions[-indices2, ]
+```
+
+```{r}
+# do new xgboost hyperparameter tuning
+rounds2 <- seq(from = 300, to = 700, by = 100)
+depth2 <- seq(from = 2, to = 12, by = 2)
+etaList2 <- seq(from = 0.10, to = 0.30, by = 0.04)
+
+roundsScores2 <- rep(0, length(rounds2))
+depthScores2 <- rep(0, length(depth2))
+etaScores2 <- rep(0, length(etaList2))
+
+# find ideal rounds
+for(i in 1:length(rounds2)) {
+  # fit model, with rounds = 500, depth = 10, eta = 0.16 (using pset 4 from S&DS 365)
+  xg <- xgboost(data = data.matrix(sampleTrain2[, -38]), 
+              label = as.numeric(as.character(sampleTrain2$y)) - 1,# only works with numeric
+              nrounds = rounds2[i], 
+              params = list(eta = 0.16, 
+                            max.depth = 10, 
+                            objective = "multi:softmax", # need to specify classification
+                            num_class = 3))
+
+  # get predictions
+  predsXg <- predict(xg, data.matrix(sampleTest2[, -38]))
+  predsXg <- predsXg + 1 # to convert [0, 2] to [1, 3], just like actual y values
+  
+  cmXg <- table(Predictions = predsXg, Actual = sampleTest2$y)
+  
+  # Evaluate using micro-averaged F1 score
+  scoreXg <- microF1Score(cmXg)
+  roundsScores2[i] <- scoreXg
+}
+
+# find ideal depth
+for(i in 1:length(depth2)) {
+  # fit model, with rounds = 500, depth = 10, eta = 0.16 (using pset 4 from S&DS 365)
+  xg <- xgboost(data = data.matrix(sampleTrain2[, -38]), 
+              label = as.numeric(as.character(sampleTrain2$y)) - 1,# only works with numeric
+              nrounds = rounds2[which.max(roundsScores2)], 
+              params = list(eta = 0.16, 
+                            max.depth = depth2[i], 
+                            objective = "multi:softmax", # need to specify classification
+                            num_class = 3))
+
+  # get predictions
+  predsXg <- predict(xg, data.matrix(sampleTest2[, -38]))
+  predsXg <- predsXg + 1 # to convert [0, 2] to [1, 3], just like actual y values
+  
+  cmXg <- table(Predictions = predsXg, Actual = sampleTest2$y)
+  
+  # Evaluate using micro-averaged F1 score
+  scoreXg <- microF1Score(cmXg)
+  depthScores2[i] <- scoreXg
+}
+
+# find ideal eta
+for(i in 1:length(etaList2)) {
+  # fit model, with rounds = 500, depth = 10, eta = 0.16 (using pset 4 from S&DS 365)
+  xg <- xgboost(data = data.matrix(sampleTrain2[, -38]), 
+              label = as.numeric(as.character(sampleTrain2$y)) - 1,# only works with numeric
+              nrounds = rounds2[which.max(roundsScores2)], 
+              params = list(eta = etaList2[i], 
+                            max.depth = depth2[which.max(depthScores2)], 
+                            objective = "multi:softmax", # need to specify classification
+                            num_class = 3))
+
+  # get predictions
+  predsXg <- predict(xg, data.matrix(sampleTest2[, -38]))
+  predsXg <- predsXg + 1 # to convert [0, 2] to [1, 3], just like actual y values
+  
+  cmXg <- table(Predictions = predsXg, Actual = sampleTest2$y)
+  
+  # Evaluate using micro-averaged F1 score
+  scoreXg <- microF1Score(cmXg)
+  etaScores2[i] <- scoreXg
+}
+
+# Now I'll fit an xg model based off my parameters
+depth2[which.max(depthScores2)]
+etaList2[which.max(etaScores2)]
+rounds2[which.max(roundsScores2)]
+```
+
+#-----------------
+29 June 2019: catboost What if I use the rest of the data? including the last column?)
+
+```{r}
+install.packages("catboost")
+library(catboost)
+```
+
+1. Import Data:
+
+```{r}
+train <- read.csv("train_values.csv")
+y <- read.csv("train_labels.csv", as.is = TRUE)
+
+# combining data matrix with response vector
+data <- cbind(train, y[, 2]) # combine training matrix with vector of y values
+names(data)[ncol(data)] <- "y"
+data$y <- as.factor(data$y)
+data$y <- as.ordered(data$y) # Make sure factors are encoded as ordered
+
+# the geo_level columns should really be levels, not ints?
+dataNoGeo <- data[, -c(2:4)] # take out geo_levels
+
+# Remove IDs
+dataNoGeo <- dataNoGeo[, -1] # take out IDs
+
+# Import test data
+test <- read.csv("test_values.csv", as.is = TRUE)
+testNoGeo <- test[, -c(2:4)] # take out geo_levels
+testNoGeo <- testNoGeo[, -1] # take out IDs
+```
+
+2. Sampling Data
+Ok, so there are 260,000 observations and 40 columns, so I'd rather not use the whole dataset, since it might take a while to converge. I'll sample 20% of the data and fit the model on that, then test on 80% of the data
+
+USE IN A FOR LOOP, 5-fold CV?
+```{r}
+# sample train
+indices <- sample.int(nrow(dataNoGeo), floor(0.2 * nrow(dataNoGeo)))
+
+# Training data
+sampleTrain <- dataNoGeo[indices, ]
+
+# Test data
+sampleTest <- dataNoGeo[-indices, ]
+```
+
+
+• Neural Network: could use some tuning as well
+
+

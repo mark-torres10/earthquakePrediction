@@ -1,0 +1,49 @@
+---
+title: "DataExploration"
+author: "Mark Torres"
+date: "5/14/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#1. Import data:
+```{r}
+train <- read.csv("train_values.csv")
+y <- read.csv("train_labels.csv", as.is = TRUE)
+
+# combining data matrix with response vector
+data <- cbind(train, y[, 2]) # combine training matrix with vector of y values
+names(data)[ncol(data)] <- "y"
+class(data$y) <- "factor" # Changing y to categorical factor
+
+# the geo_level columns should really be levels, not ints?
+dataNoGeo <- data[, -c(2:4)]
+
+test <- read.csv("test_values.csv", as.is = TRUE)
+```
+
+#2. Look for patterns across data using multivariate statistics
+
+2.1: Descriptive plots, summary statistics
+
+First, evaluate multivariate normality
+
+```{r}
+source("http://www.reuningscherer.net/STAT660/R/CSQPlot.r.txt")
+
+# get numeric indices (get the ones where numbers are ordinal)
+numerics <- c("count_floors_pre_eq", "age", "area_percentage", "height_percentage", "count_families")
+numIndices <- which(names(data) %in% numerics)
+
+# fit chi-squared quantile plot
+# CSQPlot(data[, numIndices]) # data too big, doesn't fit?
+```
+
+Techniques that I can look at:
+• MANOVA
+• PCA
+• Factor Analysis
+• Discriminant Analysis

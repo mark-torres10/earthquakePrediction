@@ -1,0 +1,72 @@
+---
+title: "DataCleaning"
+author: "Mark Torres"
+date: "5/14/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+1. Import data:
+
+```{r}
+train <- read.csv("train_values.csv")
+y <- read.csv("train_labels.csv", as.is = TRUE)
+data <- cbind(train, y[, 2]) # combine training matrix with vector of y values
+names(data)[ncol(data)] <- "y"
+
+test <- read.csv("test_values.csv", as.is = TRUE)
+```
+
+List of features list: 
+https://www.drivendata.org/competitions/57/nepal-earthquake/page/136/#features_list
+
+Things to look for in data cleaning: 
+• Missing values
+• Duplicates
+• Look at names and levels and see if it makes sense
+
+Missing values:
+```{r}
+# Look for NAs
+sum(is.na(data))
+
+# Look for weird levels where there aren't supposed to be
+
+# get factors:
+factors <- names(data)[which(unname(sapply(data, class)) == "factor")]
+dataFactors <- data[, factors]
+
+# look at levels
+for(i in 1:ncol(dataFactors)) {
+  print(levels(dataFactors[, i]))
+}
+
+# see if there are any values that don't match these levels
+for(i in 1:ncol(dataFactors)) {
+  # get levels
+  levels <- levels(dataFactors[, i])
+  # get any values that don't match up
+  sum <- sum(dataFactors[, i] %in% levels(dataFactors[, i]))
+  if(sum != nrow(dataFactors)) {
+    print(i) # print "i" if there is a value that isn't a level of a column
+  }
+} # Ok, it seems fine
+
+```
+
+
+None. So, that seems ok.
+
+Duplicates:
+```{r}
+sapply(data, FUN = grep, pattern = ",") # No commas, so no duplicated values in the same entry?
+```
+
+Names and levels: do they make sense? Seems like it. 
+
+Ok, doesn't seem like there's much data cleaning
+
+

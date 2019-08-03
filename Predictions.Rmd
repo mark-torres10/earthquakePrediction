@@ -1,0 +1,205 @@
+---
+title: "Predictions"
+author: "Mark Torres"
+date: "5/14/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+1. Import data:
+
+```{r}
+train <- read.csv("train_values.csv")
+y <- read.csv("train_labels.csv", as.is = TRUE)
+
+# combining data matrix with response vector
+data <- cbind(train, y[, 2]) # combine training matrix with vector of y values
+names(data)[ncol(data)] <- "y"
+data$y <- as.factor(data$y)
+data$y <- as.ordered(data$y) # Make sure factors are encoded as ordered
+
+# the geo_level columns should really be levels, not ints?
+dataNoGeo <- data[, -c(2:4)] # take out geo_levels
+
+# Remove IDs
+dataNoGeo <- dataNoGeo[, -1] # take out IDs
+
+# Import test data
+test <- read.csv("test_values.csv")
+testNoGeo <- test[, -c(2:4)] # take out geo_levels
+testIds <- test[, 1]
+testNoGeo <- testNoGeo[, -1] # take out IDs
+
+# sample train
+set.seed(200)
+indices <- sample.int(nrow(dataNoGeo), floor(0.2 * nrow(dataNoGeo)))
+
+# Training data
+sampleTrain <- dataNoGeo[indices, ]
+
+# Test data
+sampleTest <- dataNoGeo[-indices, ]
+```
+
+2. Fit models: 
+
+• Linear Discriminant Analysis
+
+Fit model
+```{r}
+library(klaR)
+
+# get numeric indices
+numerics <- c("count_floors_pre_eq", "age", "area_percentage", "height_percentage", "count_families")
+numIndices <- which(names(sampleTest) %in% numerics)
+
+# Fit LDA
+yLDA <- lda(sampleTrain[, numIndices], grouping = sampleTrain$y)
+
+
+# Predictions and classification
+predsLDA <- unlist(predict(yLDA, sampleTest[, numIndices])[1])
+cmLDA <- table(Predictions = predsLDA, Actual = sampleTest$y)
+
+# Evaluate using micro-averaged F1 score
+scoreLDA <- microF1Score(cmLDA)
+scoreLDA
+```
+
+Make prediction on test data:
+
+```{r}
+predsLDA <- unlist(predict(yLDA, testNoGeo[, numIndices])[1])
+predsLDA # ok, this looks very unbalanced: I doubt this is it
+```
+
+• Xgboost:
+
+Fit model:
+```{r}
+library(xgboost)
+
+# fit model, with rounds = 500, depth = 10, eta = 0.16 (using pset 4 from S&DS 365)
+xg <- xgboost(data = data.matrix(sampleTrain[, -36]), 
+              label = as.numeric(as.character(sampleTrain$y)) - 1,# only works with numeric
+              nrounds = 500, 
+              params = list(eta = 0.16, 
+                            max.depth = 10, 
+                            objective = "multi:softmax", # need to specify classification
+                            num_class = 3))
+```
+
+Make predictions on test data:
+```{r}
+# make predictions
+predsXg <- predict(xg, data.matrix(testNoGeo))
+predsXg <- predsXg + 1 # to fix [0, 2] to [1, 3]
+
+# create submission
+submissionXg1 <- data.frame(building_id = testIds, damage_grade = predsXg)
+write.csv(submissionXg1, "submissions/submission1.csv")
+
+# check csv file in future, erase first column
+```
+
+• Xgboost (pt.2):
+
+Fit model:
+
+```{r}
+xg2 <- xgboost(data = data.matrix(sampleTrain[, -36]), 
+              label = as.numeric(as.character(sampleTrain$y)) - 1,# only works with numeric
+              nrounds = 300, 
+              params = list(eta = 0.1, 
+                            max.depth = 6, # I'll use 6 instead of 2 (my "max score") since 2 seems too low
+                            objective = "multi:softmax", # need to specify classification
+                            num_class = 3))
+
+
+```
+
+Make predictions on test data:
+```{r}
+# make predictions
+predsXg2 <- predict(xg2, data.matrix(testNoGeo))
+predsXg2 <- predsXg2 + 1 # to fix [0, 2] to [1, 3]
+
+# create submission
+submissionXg2 <- data.frame(building_id = testIds, damage_grade = predsXg2)
+write.csv(submissionXg2, "submissions/submission2.csv")
+
+# check csv file in future, erase first column
+```
+
+Attempt 3: Now I'll try to include the region columns
+
+```{r}
+train <- read.csv("train_values.csv")
+y <- read.csv("train_labels.csv", as.is = TRUE)
+
+# combining data matrix with response vector
+data <- cbind(train, y[, 2]) # combine training matrix with vector of y values
+names(data)[ncol(data)] <- "y"
+data$y <- as.factor(data$y)
+data$y <- as.ordered(data$y) # Make sure factors are encoded as ordered
+
+# write data
+dataNoID <- data[, -1]
+dataWithRegions <- dataNoID[, -3] # Doesn't include third geo_level 
+
+# write factors
+dataWithRegions$geo_level_1_id <- factor(dataWithRegions$geo_level_1_id)
+dataWithRegions$geo_level_2_id <- factor(dataWithRegions$geo_level_2_id)
+
+# training/test samples
+indices2 <- sample.int(nrow(dataWithRegions), floor(0.2 * nrow(dataWithRegions)))
+sampleTrain2 <- dataWithRegions[indices2, ]
+sampleTest2 <- dataWithRegions[-indices2, ]
+
+# test data:
+test <- read.csv("test_values.csv")
+#testNoGeo <- test[, -c(2:4)] # take out geo_levels
+testIds <- test[, 1]
+testGeo <- test[, -c(1, 4)] # take out IDs
+
+# factors:
+testGeo$geo_level_1_id <- factor(testGeo$geo_level_1_id)
+testGeo$geo_level_2_id <- factor(testGeo$geo_level_2_id)
+
+# # sample train
+# set.seed(200)
+# indices <- sample.int(nrow(dataNoGeo), floor(0.2 * nrow(dataNoGeo)))
+# 
+# # Training data
+# sampleTrain <- dataNoGeo[indices, ]
+# 
+# # Test data
+# sampleTest <- dataNoGeo[-indices, ]
+```
+
+```{r}
+library(xgboost)
+# get data from DataModeling
+# fit model:
+xg3 <- xgboost(data = data.matrix(sampleTrain2[, -38]), 
+              label = as.numeric(as.character(sampleTrain2$y)) - 1,# only works with numeric
+              nrounds = 300, 
+              params = list(eta = 0.26, 
+                            max.depth = 6, 
+                            objective = "multi:softmax", # need to specify classification
+                            num_class = 3))
+
+# make predictions
+predsXg3 <- predict(xg3, data.matrix(testGeo))
+predsXg3 <- predsXg3 + 1 # to fix [0, 2] to [1, 3]
+
+# create submission
+submissionXg3 <- data.frame(building_id = testIds, damage_grade = predsXg3)
+write.csv(submissionXg3, "submissions/submission3.csv")
+
+# check csv file in future, erase first column
+```
+

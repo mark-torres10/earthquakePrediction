@@ -1,0 +1,179 @@
+{\rtf1\ansi\ansicpg1252\cocoartf1671\cocoasubrtf500
+{\fonttbl\f0\fswiss\fcharset0 Helvetica-Bold;\f1\fswiss\fcharset0 Helvetica;\f2\froman\fcharset0 Times-Roman;
+\f3\fswiss\fcharset0 Helvetica-Oblique;}
+{\colortbl;\red255\green255\blue255;\red0\green0\blue233;\red0\green0\blue233;}
+{\*\expandedcolortbl;;\cssrgb\c0\c0\c93333;\cssrgb\c0\c0\c93333;}
+\margl1440\margr1440\vieww28600\viewh18000\viewkind0
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+
+\f0\b\fs24 \cf0 NotesToSelf\
+\
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+
+\f1\b0 \cf0 List of features:\
+\pard\pardeftab720\sl280\partightenfactor0
+{\field{\*\fldinst{HYPERLINK "https://www.drivendata.org/competitions/57/nepal-earthquake/page/136/#features_list"}}{\fldrslt 
+\f2 \cf2 \expnd0\expndtw0\kerning0
+\ul \ulc2 https://www.drivendata.org/competitions/57/nepal-earthquake/page/136/#features_list}}\
+\
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+\cf0 Source of data (also includes more information/visualizations): {\field{\*\fldinst{HYPERLINK "http://eq2015.npc.gov.np/#/"}}{\fldrslt 
+\f2 \cf2 \expnd0\expndtw0\kerning0
+\ul \ulc2 http://eq2015.npc.gov.np/#/}}\
+\
+Damage was differential across districts: \
+\'95\'a0{\field{\*\fldinst{HYPERLINK "http://eq2015.npc.gov.np/#/compare"}}{\fldrslt 
+\f2 \cf2 \expnd0\expndtw0\kerning0
+\ul \ulc2 http://eq2015.npc.gov.np/#/compare}}\
+\
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+
+\f0\b \cf0 Approach: 
+\f1\b0 \
+\'95\'a0Clean data\
+\'95 Do data exploration\
+\'95 Build model (maybe look at past S&DS365 upsets for inspiration?)\
+\
+
+\f0\b First, I want to look at what affects earthquake damage
+\f1\b0 \
+\'95\'a0Loose, sandy, soggy soil\
+\'95\'a0Architecture: \
+	Poor construction\
+	Weak cement\
+\
+Features in dataset:\
+	Geo_level (location indication): geographic region, from 1 (largest region) to 3 (most specific subregion)\
+	count_floors_pre_eq: number of rooms: # of floors in building\
+	age: age of building\
+	area_percentage: (normalized) area of building footprint\
+	height_percentage: (normalized) height of building footprint\
+	land_surface_condition: surface condition of land where building is built\
+\
+Notes to self: \
+	Maybe worth separating out by geo_level, since this varies per region? Fit multiple models? 
+\f3\i Maybe look at trends in each geo_level?
+\f1\i0 \
+	\
+
+\f0\b Now, I\'92ll start by analyzing the data using multivariate statistics
+\f1\b0 \
+Get nature of data: \
+	\'95\'a0Categorical: \
+		\'95\'a0Nominal\
+			Geo_level\
+			land_surface_condition\
+			foundation_type\
+			roof_type\
+			ground_floor_type\
+			other_floor_type\
+			position\
+			plan_configuration\
+			has_superstructure_: set of indicator variables, (1) adobe_mud, (2) mud_mortar_stone, (3) stone_flag, (4) cement_mortar_stone, (5) mud_mortar_brick, (6) cement_mortar_brick, (7) timber, (8) bamboo, (9) rc_non_engineered, (10), rc_engineered, (11) other\
+			legal_ownership_status\
+			has_secondary_use_: set of indicator variables: (1) agriculture, (2) hotel, (3) rental, (4) institution, (5) school, (6) industry, (7) health_post, (8) gov_office, (9) use_police, (10) use_other\
+			\
+		\'95\'a0Ordinal\
+			damage_grade\
+	 \'95 Numeric\
+		count_floors_pre_eq\
+		age\
+		area_percentage\
+		height_percentage\
+		count_families\
+\
+Right now, the geo_level ids should be factors, but I don\'92t how how to deal with that, so I\'92ll hold off for now\
+\
+
+\f0\b Fitting the Models
+\f1\b0 \
+Here are the list of algorithms that I\'92m considering trying\
+\'95 Multinomial Logistic Regression\
+\'95 Discriminant Analysis\
+\'95\'a0Naive Bayes\
+\'95 Random Forest\
+\'95 AdaBoost\
+	Multi-class AdaBoost: {\field{\*\fldinst{HYPERLINK "https://web.stanford.edu/~hastie/Papers/samme.pdf"}}{\fldrslt 
+\f2 \cf2 \expnd0\expndtw0\kerning0
+\ul \ulc2 https://web.stanford.edu/~hastie/Papers/samme.pdf}}\
+\'95 Xgboost\
+\'95\'a0Neural Network\
+\
+\
+I\'92ll check the accuracy of each using cross-validation\
+Read this to get list of metrics (our metric of interest is the micro-averaged F1 score)\
+	{\field{\*\fldinst{HYPERLINK "https://blog.revolutionanalytics.com/2016/03/com_class_eval_metrics_r.html#micro"}}{\fldrslt 
+\f2 \cf2 \expnd0\expndtw0\kerning0
+\ul \ulc2 https://blog.revolutionanalytics.com/2016/03/com_class_eval_metrics_r.html#micro}}\
+\
+The micro-averaged F1 score favored classes with a large number of instances (so you get rewarded for predicting large numbers of classes correctly). \
+\
+Good resource for imbalanced multi class problems:\
+\pard\pardeftab720\sl280\partightenfactor0
+{\field{\*\fldinst{HYPERLINK "https://towardsdatascience.com/machine-learning-multiclass-classification-with-imbalanced-data-set-29f6a177c1a"}}{\fldrslt 
+\f2 \cf2 \expnd0\expndtw0\kerning0
+\ul \ulc2 https://towardsdatascience.com/machine-learning-multiclass-classification-with-imbalanced-data-set-29f6a177c1a}}
+\f2 \cf2 \expnd0\expndtw0\kerning0
+\ul \ulc2 \
+\
+\pard\pardeftab720\sl280\partightenfactor0
+
+\f1 \cf0 \kerning1\expnd0\expndtw0 \ulnone NOTE: NONE of my models use the geo_levels data. I\'92ll see what I can do without using this data, then figure out how I can incorporate the geo_levels data. I\'92m finding it hard to use because the data is of type \'93factor\'94, so I\'92m worried about the computational complexity of the models when they iterate through all the levels. \
+\
+Also, perhaps my models need tuning?\
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+\cf0 \
+
+\f0\b Results
+\f1\b0 \
+So far, it seems like my linear discriminant analysis does the best, in terms of micro averaged F1 score, which is weird because I use only the numeric variables in my model. But, when I fit it on the actual model, I see how inaccurate it truly is, which makes sense. \
+\
+For my first submission, I\'92ll use a simple xgboost model. I don\'92t expect it to do that well because it needs hyper tuning, but we\'92ll see\
+\'95\'a0In my first attempt, I beat the baseline random forest (my score = 0.5915, baseline = 0.5815) and I\'92m sure that if I use a hyper tuned xgboost model, it\'92ll do better (my best bet is probably some kind of neural network)\
+\
+
+\f0\b Followups
+\f1\b0 :\
+\'95\'a0Parameter tuning for Adaboost, Xgboost, Neural network, Bagging\
+\'95\'a0It seems like my models repeatedly overestimate frequency of \'932\'94, and have a lot of errors where the actual value is \'933\'94 but the predicted value is \'932\'94. \
+	\'95\'a0Need to address the imbalance:\
+		{\field{\*\fldinst{HYPERLINK "https://stats.stackexchange.com/questions/28738/using-adaboost-on-multi-class-in-r-on-unbalanced-data"}}{\fldrslt 
+\f2 \cf2 \expnd0\expndtw0\kerning0
+\ul https://stats.stackexchange.com/questions/28738/using-adaboost-on-multi-class-in-r-on-unbalanced-data}}\
+\'95\'a0Use cross-validation to improve models\
+		\
+\
+\
+
+\f0\b 21 May 2019\
+\
+
+\f1\b0 I did parameter tuning of the xgboost model, got score = 0.6029. \
+\
+Now, I\'92ll try to include the regions, since I saw that these are important\
+\
+I feel like if I include the most specific layer of region, there are 11,000 factors, and this would mean there are ~50 per factor on average, and I think that\'92s going to overfit, so I won\'92t fit based on it\
+\
+Ok, I included the region data in the xgboost model, with tuning, and got score = 0.6788. \
+\
+\
+
+\f0\b 29 June 2019
+\f1\b0 \
+\
+I\'92ll try to improve my model now. I\'92ll try a \'93catboost\'94 model\
+\
+\pard\pardeftab720\sl280\partightenfactor0
+{\field{\*\fldinst{HYPERLINK "http://learningsys.org/nips17/assets/papers/paper_11.pdf"}}{\fldrslt 
+\f2 \cf3 \expnd0\expndtw0\kerning0
+\ul \ulc3 \outl0\strokewidth0 \strokec3 http://learningsys.org/nips17/assets/papers/paper_11.pdf}}
+\f2 \cf3 \expnd0\expndtw0\kerning0
+\ul \ulc3 \outl0\strokewidth0 \strokec3 \
+
+\f1 \cf0 \kerning1\expnd0\expndtw0 \ulnone \outl0\strokewidth0 \
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+\cf0 Let\'92s see how it goes\
+\
+\
+\
+}
